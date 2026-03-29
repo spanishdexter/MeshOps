@@ -1,0 +1,352 @@
+{
+	"type": "xypdf",
+	"description": "xyOps Portable Data Object",
+	"version": "1.0",
+	"xyops": "1.0.40",
+	"items": [
+		{
+			"type": "event",
+			"data": {
+				"id": "emmlkj33xq8sncxc",
+				"title": "MeshCentral - Run script on endpoints",
+				"enabled": true,
+				"targets": [],
+				"params": {},
+				"fields": [
+					{
+						"id": "MeshCtrlJsPath",
+						"title": "MeshCtrl.js Filepath",
+						"type": "text",
+						"caption": "The file path to meshctrl.js . This is the javascript file from MeshCentral needed to execute remote commands on the MeshCentral server.",
+						"locked": false,
+						"value": "/home/ubuntu/meshctrl/meshctrl.js",
+						"variant": "text",
+						"required": true
+					},
+					{
+						"id": "MeshCSVFolderLocation",
+						"title": "MeshCentral Device List CSV File Path",
+						"type": "text",
+						"caption": "Folder path for temporary CSV file to parse list of endpoints",
+						"locked": false,
+						"value": "/home/ubuntu/meshctrl",
+						"variant": "text",
+						"required": true
+					},
+					{
+						"id": "MeshAPIUsername",
+						"title": "MeshCentral API Username",
+						"type": "text",
+						"caption": "Username to access the MeshCentral API.",
+						"locked": false,
+						"value": "",
+						"variant": "text",
+						"required": true
+					},
+					{
+						"id": "MeshAPIPassword",
+						"title": "MeshCentral API Password",
+						"type": "text",
+						"caption": "Password to access the MeshCentral API.",
+						"locked": false,
+						"value": "",
+						"variant": "text",
+						"required": true
+					},
+					{
+						"id": "MeshCentralURL",
+						"title": "MeshCentral WSS URL",
+						"type": "text",
+						"caption": "URL of the MeshCentral server starting with wss://",
+						"locked": false,
+						"value": "",
+						"variant": "text",
+						"required": true
+					},
+					{
+						"id": "MeshScriptFileName",
+						"title": "Script Filename",
+						"type": "text",
+						"caption": "The filename of the script when it is uploaded to the endpoint.",
+						"locked": false,
+						"value": "MeshTest.ps1",
+						"variant": "text",
+						"required": false
+					},
+					{
+						"id": "ScriptType",
+						"title": "Script Type",
+						"type": "select",
+						"caption": "Select the type of script to deploy to the endpoint.",
+						"locked": false,
+						"value": "PowerShell-Windows,Batch-Windows,PowerShell-Linux/MacOS,Bash-Linux/MacOS"
+					},
+					{
+						"id": "MeshScriptSourceLocation",
+						"title": "Script Source Folder",
+						"type": "text",
+						"caption": "Folder path where your script lives.",
+						"locked": false,
+						"value": "/home/ubuntu/meshscripts",
+						"variant": "text",
+						"required": true
+					},
+					{
+						"id": "MeshScriptTargetLocation",
+						"title": "Script Target Folder",
+						"type": "text",
+						"caption": "Full file path on endpoint where script will be uploaded to.",
+						"locked": false,
+						"value": "C:\\Windows\\Temp",
+						"variant": "text",
+						"required": false
+					},
+					{
+						"id": "MeshFilter",
+						"title": "Filter",
+						"type": "text",
+						"caption": "The filter to use to find your list of MeshCentral devices to run the script on. Refer to meshctrl.js documentation from the MeshCentral developers.",
+						"locked": false,
+						"value": "tag:'TightVNC Installed'",
+						"variant": "text",
+						"required": false
+					}
+				],
+				"triggers": [
+					{
+						"enabled": true,
+						"type": "manual",
+						"id": "n8zf3t99"
+					}
+				],
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"notes": "",
+				"workflow": {
+					"nodes": [
+						{
+							"id": "nk1o7d2r",
+							"type": "job",
+							"data": {
+								"params": {
+									"script": "#!/bin/bash\n\n# Enter your shell script code here\n\n#generate variable for temp CSV filename with timestamp\ntmp_filename_timestamp=$(date +%Y%m%d_%H%M%S_%3N)\n\n#create temporary CSV file with header\necho \"group_id,group_name,device_id,device_name,icon_type,connection_status,power_status\" > {{ workflow.params.MeshCSVFolderLocation }}/MeshDeviceTempCSV_${tmp_filename_timestamp}.csv\n\n#go through list of devices using the filter and append to temporary CSV file\nnode {{ workflow.params.MeshCtrlJsPath }} --url {{ workflow.params.MeshCentralURL }} --loginuser {{ workflow.params.MeshAPIUsername }} --loginpass {{ workflow.params.MeshAPIPassword }} ListDevices --csv --filter {{ workflow.params.MeshFilter }} >> {{ workflow.params.MeshCSVFolderLocation }}/MeshDeviceTempCSV_${tmp_filename_timestamp}.csv\n\n#remove the double quotes from the CSV\nsed 's/\"//g' {{ workflow.params.MeshCSVFolderLocation }}/MeshDeviceTempCSV_${tmp_filename_timestamp}.csv > {{ workflow.params.MeshCSVFolderLocation }}/MeshDeviceTempCSV_${tmp_filename_timestamp}_noquotes.csv\n\n#load CSV_FILE_PATH variable for parsing through endpoints in while loop\nCSV_FILE_PATH={{ workflow.params.MeshCSVFolderLocation }}/MeshDeviceTempCSV_${tmp_filename_timestamp}_noquotes.csv\n\n# Read the entire file content into the 'CSV_DATA' variable\nCSV_DATA=$(<\"$CSV_FILE_PATH\")\n\n# Loop through the endpoints\n# The 'while read' loop reads the data line by line.\n# IFS=',' temporarily sets the field separator to a comma for the read command.\n# -r prevents backslashes from being interpreted as escape characters.\n\nwhile IFS=',' read -r col1 col2 col3 col4 col5 col6 col7\ndo\n  # Skip the header line (simple check for \"group_id\")\n  if [[ \"$col1\" == \"group_id\" ]]; then\n    continue\n  fi\n   \n  # Download script file to target endpoint\n  node {{ workflow.params.MeshCtrlJsPath }} --url \"{{ workflow.params.MeshCentralURL }}\" --loginuser {{ workflow.params.MeshAPIUsername }} --loginpass {{ workflow.params.MeshAPIPassword }} upload --id $col3 --file \"{{ workflow.params.MeshScriptSourceLocation }}/{{ workflow.params.MeshScriptFileName }}\" --target \"{{ workflow.params.MeshScriptTargetLocation }}\"\n    \n  # Process endpoint with powershell commands\n  echo \"Running command on endpoint $col4 with ID $col3\"\n  node {{ workflow.params.MeshCtrlJsPath }} --url \"{{ workflow.params.MeshCentralURL }}\" --loginuser {{ workflow.params.MeshAPIUsername }} --loginpass {{ workflow.params.MeshAPIPassword }} RunCommand --id $col3 --run \"powershell.exe -executionpolicy bypass -File {{ workflow.params.MeshScriptTargetLocation }}\\{{ workflow.params.MeshScriptFileName }}\" --powershell\n\n\ndone <<< \"$CSV_DATA\" # This feeds the variable content to the while loop\n\n#remove the csv when done\nrm -f {{ workflow.params.MeshCSVFolderLocation }}/MeshDeviceTempCSV_${tmp_filename_timestamp}.csv\n\n#remove the csv file with no quotes when done\nrm -f {{ workflow.params.MeshCSVFolderLocation }}/MeshDeviceTempCSV_${tmp_filename_timestamp}_noquotes.csv",
+									"annotate": false,
+									"pass": true
+								},
+								"targets": [
+									"smmledmbsunfyfoo"
+								],
+								"algo": "random",
+								"label": "Run MeshCtrl.js (Windows PowerShell)",
+								"category": "general",
+								"plugin": "shellplug",
+								"icon": "",
+								"expression": "",
+								"tags": [
+									"tmmljuo8r4gfhwxl"
+								]
+							},
+							"x": -1318.3333333333333,
+							"y": -702.6666666666666
+						},
+						{
+							"id": "ndjpsb41",
+							"type": "job",
+							"data": {
+								"params": {
+									"script": "#!/bin/bash\n\n# Enter your shell script code here\n\n#generate variable for temp CSV filename with timestamp\ntmp_filename_timestamp=$(date +%Y%m%d_%H%M%S_%3N)\n\n#create temporary CSV file with header\necho \"group_id,group_name,device_id,device_name,icon_type,connection_status,power_status\" > {{ workflow.params.MeshCSVFolderLocation }}/MeshDeviceTempCSV_${tmp_filename_timestamp}.csv\n\n#go through list of devices using the filter and append to temporary CSV file\nnode {{ workflow.params.MeshCtrlJsPath }} --url {{ workflow.params.MeshCentralURL }} --loginuser {{ workflow.params.MeshAPIUsername }} --loginpass {{ workflow.params.MeshAPIPassword }} ListDevices --csv --filter {{ workflow.params.MeshFilter }} >> {{ workflow.params.MeshCSVFolderLocation }}/MeshDeviceTempCSV_${tmp_filename_timestamp}.csv\n\n#remove the double quotes from the CSV\nsed 's/\"//g' {{ workflow.params.MeshCSVFolderLocation }}/MeshDeviceTempCSV_${tmp_filename_timestamp}.csv > {{ workflow.params.MeshCSVFolderLocation }}/MeshDeviceTempCSV_${tmp_filename_timestamp}_noquotes.csv\n\n#load CSV_FILE_PATH variable for parsing through endpoints in while loop\nCSV_FILE_PATH={{ workflow.params.MeshCSVFolderLocation }}/MeshDeviceTempCSV_${tmp_filename_timestamp}_noquotes.csv\n\n# Read the entire file content into the 'CSV_DATA' variable\nCSV_DATA=$(<\"$CSV_FILE_PATH\")\n\n# Loop through the endpoints\n# The 'while read' loop reads the data line by line.\n# IFS=',' temporarily sets the field separator to a comma for the read command.\n# -r prevents backslashes from being interpreted as escape characters.\n\nwhile IFS=',' read -r col1 col2 col3 col4 col5 col6 col7\ndo\n  # Skip the header line (simple check for \"group_id\")\n  if [[ \"$col1\" == \"group_id\" ]]; then\n    continue\n  fi\n   \n  # Download script file to target endpoint\n  node {{ workflow.params.MeshCtrlJsPath }} --url \"{{ workflow.params.MeshCentralURL }}\" --loginuser {{ workflow.params.MeshAPIUsername }} --loginpass {{ workflow.params.MeshAPIPassword }} upload --id $col3 --file \"{{ workflow.params.MeshScriptSourceLocation }}/{{ workflow.params.MeshScriptFileName }}\" --target \"{{ workflow.params.MeshScriptTargetLocation }}\"\n    \n  # Process endpoint with batch commands\n  echo \"Running command on endpoint $col4 with ID $col3\"\n  node {{ workflow.params.MeshCtrlJsPath }} --url \"{{ workflow.params.MeshCentralURL }}\" --loginuser {{ workflow.params.MeshAPIUsername }} --loginpass {{ workflow.params.MeshAPIPassword }} RunCommand --id $col3 --run \"{{ workflow.params.MeshScriptTargetLocation }}\\{{ workflow.params.MeshScriptFileName }}\"\n\n\ndone <<< \"$CSV_DATA\" # This feeds the variable content to the while loop\n\n#remove the csv when done\nrm -f {{ workflow.params.MeshCSVFolderLocation }}/MeshDeviceTempCSV_${tmp_filename_timestamp}.csv\n\n#remove the csv file with no quotes when done\nrm -f {{ workflow.params.MeshCSVFolderLocation }}/MeshDeviceTempCSV_${tmp_filename_timestamp}_noquotes.csv",
+									"annotate": false,
+									"pass": true
+								},
+								"targets": [
+									"smmledmbsunfyfoo"
+								],
+								"algo": "random",
+								"label": "Run MeshCtrl.js (Windows Batch)",
+								"category": "general",
+								"plugin": "shellplug",
+								"icon": "",
+								"expression": "",
+								"tags": [
+									"tmmljuo8r4gfhwxl"
+								]
+							},
+							"x": -1503.9999999999998,
+							"y": -46.333333333333194
+						},
+						{
+							"id": "n56qecyp",
+							"type": "controller",
+							"data": {
+								"controller": "decision",
+								"label": "ScriptType = PowerShell",
+								"icon": "powershell",
+								"decision": "workflow.params.ScriptType == PowerShell"
+							},
+							"x": -1714.6666666666665,
+							"y": -506.66666666666663
+						},
+						{
+							"id": "n8zf3t99",
+							"type": "trigger",
+							"x": -2311,
+							"y": -490.99999999999994
+						},
+						{
+							"id": "n1ly5lfe",
+							"type": "controller",
+							"data": {
+								"controller": "decision",
+								"label": "ScriptType = Batch-(Windows)",
+								"icon": "invoice-text-send",
+								"decision": "workflow.params.ScriptType == Batch-(Windows)"
+							},
+							"x": -1937.3333333333335,
+							"y": -252.99999999999994
+						},
+						{
+							"id": "nvfedmal",
+							"type": "controller",
+							"data": {
+								"controller": "decision",
+								"label": "ScriptType = Bash-(Linux/MacOS)",
+								"icon": "invoice-text-send",
+								"decision": "workflow.params.ScriptType == Bash-(Linux/MacOS)"
+							},
+							"x": -2201.6666666666665,
+							"y": -239
+						},
+						{
+							"id": "noqhgiv8",
+							"type": "job",
+							"data": {
+								"params": {
+									"script": "#!/bin/bash\n\n# Enter your shell script code here\n\n#generate variable for temp CSV filename with timestamp\ntmp_filename_timestamp=$(date +%Y%m%d_%H%M%S_%3N)\n\n#create temporary CSV file with header\necho \"group_id,group_name,device_id,device_name,icon_type,connection_status,power_status\" > {{ workflow.params.MeshCSVFolderLocation }}/MeshDeviceTempCSV_${tmp_filename_timestamp}.csv\n\n#go through list of devices using the filter and append to temporary CSV file\nnode {{ workflow.params.MeshCtrlJsPath }} --url {{ workflow.params.MeshCentralURL }} --loginuser {{ workflow.params.MeshAPIUsername }} --loginpass {{ workflow.params.MeshAPIPassword }} ListDevices --csv --filter {{ workflow.params.MeshFilter }} >> {{ workflow.params.MeshCSVFolderLocation }}/MeshDeviceTempCSV_${tmp_filename_timestamp}.csv\n\n#remove the double quotes from the CSV\nsed 's/\"//g' {{ workflow.params.MeshCSVFolderLocation }}/MeshDeviceTempCSV_${tmp_filename_timestamp}.csv > {{ workflow.params.MeshCSVFolderLocation }}/MeshDeviceTempCSV_${tmp_filename_timestamp}_noquotes.csv\n\n#load CSV_FILE_PATH variable for parsing through endpoints in while loop\nCSV_FILE_PATH={{ workflow.params.MeshCSVFolderLocation }}/MeshDeviceTempCSV_${tmp_filename_timestamp}_noquotes.csv\n\n# Read the entire file content into the 'CSV_DATA' variable\nCSV_DATA=$(<\"$CSV_FILE_PATH\")\n\n# Loop through the endpoints\n# The 'while read' loop reads the data line by line.\n# IFS=',' temporarily sets the field separator to a comma for the read command.\n# -r prevents backslashes from being interpreted as escape characters.\n\nwhile IFS=',' read -r col1 col2 col3 col4 col5 col6 col7\ndo\n  # Skip the header line (simple check for \"group_id\")\n  if [[ \"$col1\" == \"group_id\" ]]; then\n    continue\n  fi\n   \n  # Download script file to target endpoint\n  node {{ workflow.params.MeshCtrlJsPath }} --url \"{{ workflow.params.MeshCentralURL }}\" --loginuser {{ workflow.params.MeshAPIUsername }} --loginpass {{ workflow.params.MeshAPIPassword }} upload --id $col3 --file \"{{ workflow.params.MeshScriptSourceLocation }}/{{ workflow.params.MeshScriptFileName }}\" --target \"{{ workflow.params.MeshScriptTargetLocation }}\"\n    \n  # Process endpoint with bash commands\n  echo \"Running command on endpoint $col4 with ID $col3\"\n  node {{ workflow.params.MeshCtrlJsPath }} --url \"{{ workflow.params.MeshCentralURL }}\" --loginuser {{ workflow.params.MeshAPIUsername }} --loginpass {{ workflow.params.MeshAPIPassword }} RunCommand --id $col3 --run \"bash {{ workflow.params.MeshScriptTargetLocation }}/{{ workflow.params.MeshScriptFileName }}\"\n\n\ndone <<< \"$CSV_DATA\" # This feeds the variable content to the while loop\n\n#remove the csv when done\nrm -f {{ workflow.params.MeshCSVFolderLocation }}/MeshDeviceTempCSV_${tmp_filename_timestamp}.csv\n\n#remove the csv file with no quotes when done\nrm -f {{ workflow.params.MeshCSVFolderLocation }}/MeshDeviceTempCSV_${tmp_filename_timestamp}_noquotes.csv",
+									"annotate": false,
+									"pass": true
+								},
+								"targets": [
+									"smmledmbsunfyfoo"
+								],
+								"algo": "random",
+								"label": "Run MeshCtrl.js (Bash Linux/MacOS)",
+								"category": "general",
+								"plugin": "shellplug",
+								"icon": "",
+								"expression": "",
+								"tags": [
+									"tmmljuo8r4gfhwxl"
+								]
+							},
+							"x": -1993.3333333333333,
+							"y": -91.66666666666654
+						},
+						{
+							"id": "nzfr5hzf",
+							"type": "job",
+							"data": {
+								"params": {
+									"script": "#!/bin/bash\n\n# Enter your shell script code here\n\n#generate variable for temp CSV filename with timestamp\ntmp_filename_timestamp=$(date +%Y%m%d_%H%M%S_%3N)\n\n#create temporary CSV file with header\necho \"group_id,group_name,device_id,device_name,icon_type,connection_status,power_status\" > {{ workflow.params.MeshCSVFolderLocation }}/MeshDeviceTempCSV_${tmp_filename_timestamp}.csv\n\n#go through list of devices using the filter and append to temporary CSV file\nnode {{ workflow.params.MeshCtrlJsPath }} --url {{ workflow.params.MeshCentralURL }} --loginuser {{ workflow.params.MeshAPIUsername }} --loginpass {{ workflow.params.MeshAPIPassword }} ListDevices --csv --filter {{ workflow.params.MeshFilter }} >> {{ workflow.params.MeshCSVFolderLocation }}/MeshDeviceTempCSV_${tmp_filename_timestamp}.csv\n\n#remove the double quotes from the CSV\nsed 's/\"//g' {{ workflow.params.MeshCSVFolderLocation }}/MeshDeviceTempCSV_${tmp_filename_timestamp}.csv > {{ workflow.params.MeshCSVFolderLocation }}/MeshDeviceTempCSV_${tmp_filename_timestamp}_noquotes.csv\n\n#load CSV_FILE_PATH variable for parsing through endpoints in while loop\nCSV_FILE_PATH={{ workflow.params.MeshCSVFolderLocation }}/MeshDeviceTempCSV_${tmp_filename_timestamp}_noquotes.csv\n\n# Read the entire file content into the 'CSV_DATA' variable\nCSV_DATA=$(<\"$CSV_FILE_PATH\")\n\n# Loop through the endpoints\n# The 'while read' loop reads the data line by line.\n# IFS=',' temporarily sets the field separator to a comma for the read command.\n# -r prevents backslashes from being interpreted as escape characters.\n\nwhile IFS=',' read -r col1 col2 col3 col4 col5 col6 col7\ndo\n  # Skip the header line (simple check for \"group_id\")\n  if [[ \"$col1\" == \"group_id\" ]]; then\n    continue\n  fi\n   \n  # Download script file to target endpoint\n  node {{ workflow.params.MeshCtrlJsPath }} --url \"{{ workflow.params.MeshCentralURL }}\" --loginuser {{ workflow.params.MeshAPIUsername }} --loginpass {{ workflow.params.MeshAPIPassword }} upload --id $col3 --file \"{{ workflow.params.MeshScriptSourceLocation }}/{{ workflow.params.MeshScriptFileName }}\" --target \"{{ workflow.params.MeshScriptTargetLocation }}\"\n    \n  # Process endpoint with powershell commands\n  echo \"Running command on endpoint $col4 with ID $col3\"\n  node {{ workflow.params.MeshCtrlJsPath }} --url \"{{ workflow.params.MeshCentralURL }}\" --loginuser {{ workflow.params.MeshAPIUsername }} --loginpass {{ workflow.params.MeshAPIPassword }} RunCommand --id $col3 --run \"pwsh -File {{ workflow.params.MeshScriptTargetLocation }}/{{ workflow.params.MeshScriptFileName }}\" --powershell\n\n\ndone <<< \"$CSV_DATA\" # This feeds the variable content to the while loop\n\n#remove the csv when done\nrm -f {{ workflow.params.MeshCSVFolderLocation }}/MeshDeviceTempCSV_${tmp_filename_timestamp}.csv\n\n#remove the csv file with no quotes when done\nrm -f {{ workflow.params.MeshCSVFolderLocation }}/MeshDeviceTempCSV_${tmp_filename_timestamp}_noquotes.csv",
+									"annotate": false,
+									"pass": true
+								},
+								"targets": [
+									"smmledmbsunfyfoo"
+								],
+								"algo": "random",
+								"label": "Run MeshCtrl.js (Linux/MacOS PowerShell)",
+								"category": "general",
+								"plugin": "shellplug",
+								"icon": "",
+								"expression": "",
+								"tags": [
+									"tmmljuo8r4gfhwxl"
+								]
+							},
+							"x": -1429,
+							"y": -376
+						},
+						{
+							"id": "nsgu6jbm",
+							"type": "controller",
+							"data": {
+								"controller": "decision",
+								"label": "ScriptType = PowerShell-Linux/MacOS",
+								"icon": "powershell",
+								"decision": "workflow.params.ScriptType == PowerShell-Linux/MacOS"
+							},
+							"x": -1765.333333333333,
+							"y": -366.6666666666666
+						}
+					],
+					"connections": [
+						{
+							"id": "c80q5hdv",
+							"source": "n56qecyp",
+							"dest": "nk1o7d2r"
+						},
+						{
+							"id": "cx5ht2y0",
+							"source": "n8zf3t99",
+							"dest": "n56qecyp"
+						},
+						{
+							"id": "ctjgs48c",
+							"source": "n8zf3t99",
+							"dest": "n1ly5lfe"
+						},
+						{
+							"id": "cem57vld",
+							"source": "n1ly5lfe",
+							"dest": "ndjpsb41"
+						},
+						{
+							"id": "c4go2or8",
+							"source": "nvfedmal",
+							"dest": "noqhgiv8"
+						},
+						{
+							"id": "cn9hmwl4",
+							"source": "n8zf3t99",
+							"dest": "nvfedmal"
+						},
+						{
+							"id": "cj340fo6",
+							"source": "n8zf3t99",
+							"dest": "nsgu6jbm"
+						},
+						{
+							"id": "c3m877ry",
+							"source": "nsgu6jbm",
+							"dest": "nzfr5hzf"
+						}
+					]
+				},
+				"category": "cammljtn3236gxpf",
+				"type": "workflow",
+				"icon": "monitor",
+				"tags": [
+					"tmmljuo8r4gfhwxl"
+				],
+				"plugin": "_workflow"
+			}
+		}
+	]
+}

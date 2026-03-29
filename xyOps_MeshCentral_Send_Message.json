@@ -1,0 +1,176 @@
+{
+	"type": "xypdf",
+	"description": "xyOps Portable Data Object",
+	"version": "1.0",
+	"xyops": "1.0.40",
+	"items": [
+		{
+			"type": "event",
+			"data": {
+				"title": "MeshCentral - Send Message To Endpoints",
+				"enabled": true,
+				"targets": [],
+				"params": {},
+				"fields": [
+					{
+						"id": "MeshCtrlJsPath",
+						"title": "MeshCtrl.js Filepath",
+						"type": "text",
+						"caption": "The file path to meshctrl.js . This is the javascript file from MeshCentral needed to execute remote commands on the MeshCentral server.",
+						"locked": false,
+						"value": "/home/ubuntu/meshctrl/meshctrl.js",
+						"variant": "text",
+						"required": true
+					},
+					{
+						"id": "MeshCSVFolderLocation",
+						"title": "MeshCentral Device List CSV File Path",
+						"type": "text",
+						"caption": "Folder path for temporary CSV file to parse list of endpoints",
+						"locked": false,
+						"value": "/home/ubuntu/meshctrl",
+						"variant": "text",
+						"required": true
+					},
+					{
+						"id": "MeshAPIUsername",
+						"title": "MeshCentral API Username",
+						"type": "text",
+						"caption": "Username to access the MeshCentral API.",
+						"locked": false,
+						"value": "",
+						"variant": "text",
+						"required": true
+					},
+					{
+						"id": "MeshAPIPassword",
+						"title": "MeshCentral API Password",
+						"type": "text",
+						"caption": "Password to access the MeshCentral API.",
+						"locked": false,
+						"value": "",
+						"variant": "text",
+						"required": true
+					},
+					{
+						"id": "MeshCentralURL",
+						"title": "MeshCentral WSS URL",
+						"type": "text",
+						"caption": "URL of the MeshCentral server starting with wss://",
+						"locked": false,
+						"value": "",
+						"variant": "text",
+						"required": true
+					},
+					{
+						"id": "Title",
+						"title": "Title",
+						"type": "text",
+						"caption": "Title of the message.",
+						"locked": false,
+						"value": "",
+						"variant": "text",
+						"required": true
+					},
+					{
+						"id": "Message",
+						"title": "Message",
+						"type": "text",
+						"caption": "The message to send to the endpoints.",
+						"locked": false,
+						"value": "",
+						"variant": "text",
+						"required": true
+					},
+					{
+						"id": "MeshFilter",
+						"title": "Filter",
+						"type": "text",
+						"caption": "The filter to use to find your list of MeshCentral devices to send the message to. Refer to meshctrl.js documentation from the MeshCentral developers.",
+						"locked": false,
+						"value": "tag:'TightVNC Installed'",
+						"variant": "text",
+						"required": false
+					}
+				],
+				"triggers": [
+					{
+						"enabled": true,
+						"type": "manual",
+						"id": "n8zf3t99"
+					}
+				],
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"notes": "",
+				"workflow": {
+					"nodes": [
+						{
+							"id": "n8zf3t99",
+							"type": "trigger",
+							"x": -2231,
+							"y": -473.99999999999994
+						},
+						{
+							"id": "nzfr5hzf",
+							"type": "job",
+							"data": {
+								"params": {
+									"script": "#!/bin/bash\n\n# Enter your shell script code here\n\n#generate variable for temp CSV filename with timestamp\ntmp_filename_timestamp=$(date +%Y%m%d_%H%M%S_%3N)\n\n#create temporary CSV file with header\necho \"group_id,group_name,device_id,device_name,icon_type,connection_status,power_status\" > {{ workflow.params.MeshCSVFolderLocation }}/MeshDeviceTempCSV_${tmp_filename_timestamp}.csv\n\n#go through list of devices using the filter and append to temporary CSV file\nnode {{ workflow.params.MeshCtrlJsPath }} --url {{ workflow.params.MeshCentralURL }} --loginuser {{ workflow.params.MeshAPIUsername }} --loginpass {{ workflow.params.MeshAPIPassword }} ListDevices --csv --filter {{ workflow.params.MeshFilter }} >> {{ workflow.params.MeshCSVFolderLocation }}/MeshDeviceTempCSV_${tmp_filename_timestamp}.csv\n\n#remove the double quotes from the CSV\nsed 's/\"//g' {{ workflow.params.MeshCSVFolderLocation }}/MeshDeviceTempCSV_${tmp_filename_timestamp}.csv > {{ workflow.params.MeshCSVFolderLocation }}/MeshDeviceTempCSV_${tmp_filename_timestamp}_noquotes.csv\n\n#load CSV_FILE_PATH variable for parsing through endpoints in while loop\nCSV_FILE_PATH={{ workflow.params.MeshCSVFolderLocation }}/MeshDeviceTempCSV_${tmp_filename_timestamp}_noquotes.csv\n\n# Read the entire file content into the 'CSV_DATA' variable\nCSV_DATA=$(<\"$CSV_FILE_PATH\")\n\n# Loop through the endpoints\n# The 'while read' loop reads the data line by line.\n# IFS=',' temporarily sets the field separator to a comma for the read command.\n# -r prevents backslashes from being interpreted as escape characters.\n\nwhile IFS=',' read -r col1 col2 col3 col4 col5 col6 col7\ndo\n  # Skip the header line (simple check for \"group_id\")\n  if [[ \"$col1\" == \"group_id\" ]]; then\n    continue\n  fi\n       \n  # Process endpoint with message command\n  echo \"Running command on endpoint $col4 with ID $col3\"\n  node {{ workflow.params.MeshCtrlJsPath }} --url \"{{ workflow.params.MeshCentralURL }}\" --loginuser {{ workflow.params.MeshAPIUsername }} --loginpass {{ workflow.params.MeshAPIPassword }} DeviceMessage --id $col3 --msg \"{{ workflow.params.Message }}\" --title \"{{ workflow.params.Title }}\"\n\n\ndone <<< \"$CSV_DATA\" # This feeds the variable content to the while loop\n\n#remove the csv when done\nrm -f {{ workflow.params.MeshCSVFolderLocation }}/MeshDeviceTempCSV_${tmp_filename_timestamp}.csv\n\n#remove the csv file with no quotes when done\nrm -f {{ workflow.params.MeshCSVFolderLocation }}/MeshDeviceTempCSV_${tmp_filename_timestamp}_noquotes.csv",
+									"annotate": false,
+									"pass": true
+								},
+								"targets": [
+									"smmledmbsunfyfoo"
+								],
+								"algo": "random",
+								"label": "Run MeshCtrl.js - Message",
+								"category": "general",
+								"plugin": "shellplug",
+								"icon": "",
+								"expression": "",
+								"tags": [
+									"tmmljuo8r4gfhwxl"
+								]
+							},
+							"x": -1924,
+							"y": -551.3333333333333
+						}
+					],
+					"connections": [
+						{
+							"id": "c0etttk9",
+							"source": "n8zf3t99",
+							"dest": "nzfr5hzf"
+						}
+					]
+				},
+				"category": "cammljtn3236gxpf",
+				"type": "workflow",
+				"icon": "monitor",
+				"tags": [
+					"tmmljuo8r4gfhwxl"
+				],
+				"plugin": "_workflow",
+				"id": "emn70bsnn3a6kqrk"
+			}
+		}
+	]
+}
